@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # This script get's a list of ISR 1100 routers from vManage to perform the following check
-# Is port G0/1/0 active and is G0/1/03 admin down? if G0/1/3 is not admin downt then the provisioning ports need shutting down for this site
+# Is port G0/1/0 active and is G0/1/0/4 admin down? if G0/1/4 is not admin downt then the provisioning ports need shutting down for this site
 
 # This library hides sensitive input and replaces it with another character; default *
 from pwinput import pwinput
@@ -67,10 +67,13 @@ change_required = []
 
 for router in routers:
     if "1127" in router.uuid or "1161" in router.uuid:
-        if "UNREACHABLE" in router.reachability: continue
+        reachable=str(router.reachability)
         systemip = router.id
         hostname = router.hostname
         serial = router.uuid.split("-")[-1]
+        if "UNREACHABLE" in reachable:
+            print(f"{systemip:<20}{hostname:<35}{'Device offline - Skipping'}")
+            continue
         print(f"{systemip:<20}{hostname:<35}{'Connecting...'}")
         try:
             ssh_connect = ConnectHandler(host=systemip, username=ciscouser, password=ciscopass, device_type="cisco_ios")
