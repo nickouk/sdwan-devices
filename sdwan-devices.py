@@ -45,6 +45,12 @@ def qosreport(routers):
 
     total_devices = 0
 
+    try:
+        n2r1_ssh_connect = ConnectHandler(host="172.31.232.9", username=ciscouser, password=ciscopass, device_type="cisco_ios")
+	# Some error
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
     for router in routers:
         reachable=str(router.reachability)
         systemip = router.id
@@ -84,12 +90,19 @@ def qosreport(routers):
         else:
             shaperdict["live"].append("Not Live")
         
-        # get downstream bandwidth
+        # get downstream bandwidth - this caused frequent timeout failures
+        # netmiko.exceptions.ReadTimeout: 
+        # Pattern not detected: 'SC\\-3\\-0124\\-SE78EX\\-R1\\#' in output. (checked log and it was there)
+        #
         #try:
         #    downstreamtext = ssh_connect.send_command("sh sdwan run | inc downst",read_timeout=30,use_textfsm=False)
         #except NetmikoTimeoutException:
         #    shaperdict["downstream"].append("timeout")
         #   continue
+        
+        # Get downstream bandwith
+        # Log into a headend and get the bandwidth from there as it is requested by the spoke
+        # for this we need the WAN IP
 
         # get WAN IP
         ceftext = ssh_connect.send_command("sh ip cef 0.0.0.0/0 | inc nexthop",use_textfsm=False)
@@ -97,14 +110,22 @@ def qosreport(routers):
         protocoltext = ssh_connect.send_command("sh prot "+wanif+" | inc Internet address",use_textfsm=False)
         protocoltext = protocoltext.split("/")[0]
         wanip = protocoltext.split(" ")[-1]
+        # we do not want to check tloc interface as the private IP wont exist on the hub and when we check the other router for this site the shaper will be checked then
+        if wanip == "192.168.12.1":
+            wanif = (ceftext.split(" ")[-5].split())[0]
+            protocoltext = ssh_connect.send_command("sh prot "+wanif+" | inc Internet address",use_textfsm=False)
+            protocoltext = protocoltext.split("/")[0]
+            wanip = protocoltext.split(" ")[-1]
 
         # connect to a hub and read the downstream bandwidth that was requested
-
-
-        if len(downstreamtext) == 0:
+        hubqostext = n2r1_ssh_connect.send_command("sh platform software sdwan qos target | inc " + wanip,use_textfsm=False)
+        # remove trailing spaces
+        hubqostext=hubqostext.strip()
+        
+        if len(hubqostext) == 0:
             shaperdict["downstream"].append("not configured")
             continue
-        downrate = int(int(downstreamtext.split("bandwidth-downstream ")[1])/1000)
+        downrate = int(int(hubqostext.split(" ")[-1])/1000)
         shaperdict["downstream"].append(str(downrate)+" Mb")
 
     print(f"\nTotal devices (including unreacahble): {total_devices}")        
@@ -112,7 +133,7 @@ def qosreport(routers):
     print("\nThe following shapers of less than 200Mb were found:\n\n")
 
     for index in range(len(shaperdict["hostname"])):
-        print(f'{shaperdict["ip"][index]:<20}{shaperdict["hostname"][index]:<35}up:{shaperdict["shaperate"][index]:<3}Mb    down:{shaperdict["downstream"][index]:<16} Migrated?:{shaperdict["live"][index]}')
+        print(f'{shaperdict["ip"][index]:<20}{shaperdict["hostname"][index]:<35}up:{shaperdict["shaperate"][index]:<3}Mb    down:{shaperdict["downstream"][index]:<16} Live?:{shaperdict["live"][index]}')
 
             
 
@@ -201,7 +222,7 @@ while True:
     print("\n\nUtility for interacting with devices in vManage")
     print("-----------------------------------------------\n")
     print("[1] Check for provisoning ports that should be disabled")
-    print("[2] List sites with shapers less than 200Mb")
+    print("[2] List sites with shapers 100Mb or less")
     print("[3] Exit this utility")
     choice = int(input("\n Please select an option and press [ENTER]: "))
 
