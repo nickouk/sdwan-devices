@@ -38,6 +38,7 @@ def qosreport(routers):
     
     shaperdict = {}
     shaperdict["hostname"] = []
+    shaperdict["postcode"] = []
     shaperdict["ip"] = []
     shaperdict["shaperate"] = []
     shaperdict["downstream"] = []
@@ -71,34 +72,16 @@ def qosreport(routers):
             print(f"An error occurred: {str(e)}")
             continue
         
-        shapertext = ssh_connect.send_command("sh policy-map int output | inc target shape rate",use_textfsm=False)
-        if len(shapertext) == 0:
-			# no shaper
-            continue
-        shaperate = int(shapertext.split("target shape rate ")[1])
-        shaperate = int(shaperate/1000000)
-        if shaperate > 100: continue
+        # check if router is "live" - only works for 1100 series
 
-        # shaperate is 100Mb or less so collect additional info
-        print(f"{shaperate}Mb")
-        shaperdict["hostname"].append(hostname)
-        shaperdict["ip"].append(systemip)
-        shaperdict["shaperate"].append(shaperate)
-        interface_status = ssh_connect.send_command("show interface status",use_textfsm=True)
-        if interface_status[0]["status"] == "connected" or interface_status[1]["status"] =="connected":
-            shaperdict["live"].append("Live")
+        if "1127" in router.uuid or "1161" in router.uuid or "1117" in router.uuid:
+            interface_status = ssh_connect.send_command("show interface status",use_textfsm=True)
+            if interface_status[0]["status"] == "connected" or interface_status[1]["status"] =="connected":
+                shaperdict["live"].append("Live")
+            else:
+                shaperdict["live"].append("Not Live")
         else:
-            shaperdict["live"].append("Not Live")
-        
-        # get downstream bandwidth - this caused frequent timeout failures
-        # netmiko.exceptions.ReadTimeout: 
-        # Pattern not detected: 'SC\\-3\\-0124\\-SE78EX\\-R1\\#' in output. (checked log and it was there)
-        #
-        #try:
-        #    downstreamtext = ssh_connect.send_command("sh sdwan run | inc downst",read_timeout=30,use_textfsm=False)
-        #except NetmikoTimeoutException:
-        #    shaperdict["downstream"].append("timeout")
-        #   continue
+            shaperdict["live"].append("na")
         
         # Get downstream bandwith
         # Log into a headend and get the bandwidth from there as it is requested by the spoke
@@ -111,7 +94,7 @@ def qosreport(routers):
         protocoltext = protocoltext.split("/")[0]
         wanip = protocoltext.split(" ")[-1]
         # we do not want to check tloc interface as the private IP wont exist on the hub and when we check the other router for this site the shaper will be checked then
-        if wanip == "192.168.12.1":
+        if "192.168.12" in wanip:
             wanif = (ceftext.split(" ")[-5].split())[0]
             protocoltext = ssh_connect.send_command("sh prot "+wanif+" | inc Internet address",use_textfsm=False)
             protocoltext = protocoltext.split("/")[0]
@@ -123,17 +106,57 @@ def qosreport(routers):
         hubqostext=hubqostext.strip()
         
         if len(hubqostext) == 0:
-            shaperdict["downstream"].append("not configured")
+            shaperdict["downstream"].append("---")
+        else:    
+            downrate = int(int(hubqostext.split(" ")[-1])/1000)
+            shaperdict["downstream"].append(str(downrate))
+        
+        shapertext = ssh_connect.send_command("sh policy-map int output | inc target shape rate",use_textfsm=False)
+        if len(shapertext) == 0:
+			# no shaper
+            shaperdict["hostname"].append(hostname)
+            try:
+                postcode = hostname.split("-")[3]
+            except IndexError:
+                postcode = "unknown"
+            shaperdict["postcode"].append(postcode)
+            shaperdict["ip"].append(systemip)
+            shaperdict["shaperate"].append("---")
             continue
-        downrate = int(int(hubqostext.split(" ")[-1])/1000)
-        shaperdict["downstream"].append(str(downrate)+" Mb")
+
+        shaperate = int(shapertext.split("target shape rate ")[1])
+        shaperate = int(shaperate/1000000)
+        #if shaperate > 100: continue
+
+        # shaperate is 100Mb or less so collect additional info
+        # print(f"{shaperate}Mb")
+        shaperdict["hostname"].append(hostname)
+        postcode = hostname.split("-")[3]
+        shaperdict["postcode"].append(postcode)
+        shaperdict["ip"].append(systemip)
+        shaperdict["shaperate"].append(shaperate)
+
+        
+        # get downstream bandwidth - this caused frequent timeout failures
+        # netmiko.exceptions.ReadTimeout: 
+        # Pattern not detected: 'SC\\-3\\-0124\\-SE78EX\\-R1\\#' in output. (checked log and it was there)
+        #
+        #try:
+        #    downstreamtext = ssh_connect.send_command("sh sdwan run | inc downst",read_timeout=30,use_textfsm=False)
+        #except NetmikoTimeoutException:
+        #    shaperdict["downstream"].append("timeout")
+        #   continue
+        
+
 
     print(f"\nTotal devices (including unreacahble): {total_devices}")        
 
-    print("\nThe following shapers of less than 200Mb were found:\n\n")
+    print("\nThe following shapers are deployed:\n\n")
+
+    print(f'{"ip":<20}{"hostname":<35}{"postcode":<10}{"up":<5}{"down":<5}{"live"}\n')
 
     for index in range(len(shaperdict["hostname"])):
-        print(f'{shaperdict["ip"][index]:<20}{shaperdict["hostname"][index]:<35}up:{shaperdict["shaperate"][index]:<3}Mb    down:{shaperdict["downstream"][index]:<16} Live?:{shaperdict["live"][index]}')
+        print(f'{shaperdict["ip"][index]:<20}{shaperdict["hostname"][index]:<35}{shaperdict["postcode"][index]:<10}{shaperdict["shaperate"][index]:<5}{shaperdict["downstream"][index]:<5}{shaperdict["live"][index]}')
 
             
 
@@ -222,9 +245,13 @@ while True:
     print("\n\nUtility for interacting with devices in vManage")
     print("-----------------------------------------------\n")
     print("[1] Check for provisoning ports that should be disabled")
-    print("[2] List sites with shapers 100Mb or less")
+    print("[2] List shapers and downstream bandwidth for all routers")
     print("[3] Exit this utility")
-    choice = int(input("\n Please select an option and press [ENTER]: "))
+    try:
+        choice = int(input("\n Please select an option and press [ENTER]: "))
+    except ValueError:
+        print("\nPick something :)\n\n\n")
+        continue
 
     print("\n")
 
