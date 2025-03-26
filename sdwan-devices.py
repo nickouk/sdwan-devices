@@ -204,11 +204,11 @@ def disableportscheck(routers):
 
     if not change_required:
         print("No changes required!")
-        sys.exit()
 
-    print("\nThe following serial numbers need the provision ports disabling:\n\n")
-    for serial in change_required:
-        print(serial)
+    if change_required:
+        print("\nThe following serial numbers need the provision ports disabling:\n\n")
+        for serial in change_required:
+            print(serial)
 
 username = input("Enter your vManage username: ")
 password = pwinput("Enter your vManage password: ")
