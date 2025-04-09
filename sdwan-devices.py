@@ -157,6 +157,8 @@ def qosreport(routers):
 
     for index in range(len(shaperdict["hostname"])):
         print(f'{shaperdict["ip"][index]:<20}{shaperdict["hostname"][index]:<35}{shaperdict["postcode"][index]:<10}{shaperdict["shaperate"][index]:<5}{shaperdict["downstream"][index]:<5}{shaperdict["live"][index]}')
+    
+    return
 
             
 
@@ -195,7 +197,7 @@ def disableportscheck(routers):
                     print(f"{serial:<55}{'Needs ports disabling'}")
                     change_required.append(serial)
             ssh_connect.disconnect()
-
+    
     # Print device serials requiring change
 
     change_required = set(change_required)
@@ -209,6 +211,43 @@ def disableportscheck(routers):
         print("\nThe following serial numbers need the provision ports disabling:\n\n")
         for serial in change_required:
             print(serial)
+    return
+
+def utdversioncheck(routers):
+    
+    total_devices = 0
+
+    print("\fChecking UTD version numbers...\n\n")
+
+    for router in routers:
+        reachable=str(router.reachability)
+        systemip = router.id
+        hostname = router.hostname
+        serial = router.uuid.split("-")[-1]
+        total_devices = total_devices + 1
+        if "UNREACHABLE" in reachable:
+            print(f"{systemip:<20}{hostname:<35}{'Device offline - Skipping'}")
+            continue
+        print(f"{systemip:<20}{hostname:<35}{'Connecting...'}",end="")
+        try:
+            ssh_connect = ConnectHandler(host=systemip, username=ciscouser, password=ciscopass, device_type="cisco_ios")
+    
+        # Some error
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
+            continue
+    
+
+        utd_info = ssh_connect.send_command("sh utd engine standard status | inc Current signature package version",use_textfsm=False)
+        if utd_info == "":
+            utd_info = "UTD not running"
+        else:
+            utd_info = utd_info.split("version: ")[1]
+
+        print(f"   {utd_info}")
+    
+    return
+
 
 username = input("Enter your vManage username: ")
 password = pwinput("Enter your vManage password: ")
@@ -246,7 +285,8 @@ while True:
     print("-----------------------------------------------\n")
     print("[1] Check for provisoning ports that should be disabled")
     print("[2] List shapers and downstream bandwidth for all routers")
-    print("[3] Exit this utility")
+    print("[3] List UTD Signature package version for all routers running UTD")
+    print("[4] Exit this utility")
     try:
         choice = int(input("\n Please select an option and press [ENTER]: "))
     except ValueError:
@@ -260,8 +300,11 @@ while True:
     
     if choice ==2:
         qosreport(routers)
+    
+    if choice ==3:
+        utdversioncheck(routers)
 
-    if choice == 3:
+    if choice == 4:
     # Close the vManage session
 
         print("Closing the vManage session")
