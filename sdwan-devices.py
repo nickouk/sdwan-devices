@@ -216,6 +216,7 @@ def disableportscheck(routers):
 def utdversioncheck(routers):
     
     total_devices = 0
+    utd_versions =set()
 
     print("\fChecking UTD version numbers...\n\n")
 
@@ -243,8 +244,15 @@ def utdversioncheck(routers):
             utd_info = "UTD not running"
         else:
             utd_info = utd_info.split("version: ")[1]
+            utd_versions.add(utd_info)
+
 
         print(f"   {utd_info}")
+    
+    print('\nThe following UTD signature package versions were found (NOTE: Every device should be on the same version):\n\n')
+    
+    for utd_version in utd_versions:
+        print(f'{utd_version}')
     
     return
 
