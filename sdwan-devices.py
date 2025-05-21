@@ -300,6 +300,10 @@ while True:
     except ValueError:
         print("\nPick something :)\n\n\n")
         continue
+    except KeyboardInterrupt:
+        print("\n\nKeyboard break detected\n\nClosing the vManage session")
+        session.close()
+        sys.exit()
 
     print("\n")
 
